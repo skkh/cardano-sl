@@ -1,4 +1,5 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types      #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Propagation of runtime configuration.
 
@@ -9,6 +10,7 @@ module Pos.Update.Configuration
        , withUpdateConfiguration
 
        , ourAppName
+       , currentSystemTag
        , ourSystemTag
        , lastKnownBlockVersion
        , curSoftwareVersion
@@ -19,13 +21,15 @@ import           Universum
 import           Data.Aeson (FromJSON (..), withObject, (.:), (.:?))
 import           Data.Maybe (fromMaybe)
 import           Data.Reflection (Given (..), give)
+import           Distribution.System (buildArch, buildOS)
+import           Language.Haskell.TH (runIO, runQ)
+import           Language.Haskell.TH.Syntax (returnQ)
 
 -- For FromJSON instances.
 import           Pos.Aeson.Core ()
 import           Pos.Aeson.Update ()
-import           Pos.Core (ApplicationName, BlockVersion (..), SoftwareVersion (..),
-                           currentSystemTag)
-import           Pos.Core.Update (SystemTag)
+import           Pos.Core (ApplicationName, BlockVersion (..), SoftwareVersion (..))
+import           Pos.Core.Update (SystemTag, archHelper, mkSystemTag, osHelper)
 
 ----------------------------------------------------------------------------
 -- Config itself
@@ -75,6 +79,20 @@ lastKnownBlockVersion = ccLastKnownBlockVersion updateConfiguration
 -- | Version of application (code running)
 curSoftwareVersion :: HasUpdateConfiguration => SoftwareVersion
 curSoftwareVersion = SoftwareVersion ourAppName (ccApplicationVersion updateConfiguration)
+
+-- | @SystemTag@ corresponding to the operating system/architecture pair the program was
+-- compiled in.
+-- The @Distribution.System@ module from @Cabal@ was used
+-- (https://hackage.haskell.org/package/Cabal-2.0.1.1/docs/Distribution-System.html)
+currentSystemTag :: SystemTag
+currentSystemTag =
+    $(runQ (do
+           let s = $(mkSystemTag (toText (osHelper buildOS ++ archHelper buildArch)))
+           runIO $ case s of Left e -> "Current system tag could not be\
+                                       \ calculated: " ++ e
+                             Right tag -> "Current system tag is: " ++ show tag
+           returnQ s)
+     )
 
 ourSystemTag :: HasUpdateConfiguration => SystemTag
 ourSystemTag = ccSystemTag updateConfiguration
